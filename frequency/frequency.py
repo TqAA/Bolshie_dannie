@@ -1,6 +1,7 @@
 """
 Задача 3.9 -- Частотный анализ текстов для проверки гипотезы об авторстве
     mpiexec -n 6 python .\frequency\frequency.py
+    chcp 65001
 """
 
 import re
@@ -16,26 +17,18 @@ import nltk
 nltk.download('stopwords', quiet=True)
 sys.stdout.reconfigure(encoding='utf-8')
 
-# =========================
-# MPI
-# =========================
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# =========================
-# PATHS
-# =========================
+
 
 TEXT1_PATH = "frequency/text1.txt"
 TEXT2_PATH = "frequency/text2.txt"
 
 TOP_N = 50
 
-# =========================
-# СТОП-СЛОВА
-# =========================
 
 def load_stopwords():
     from nltk.corpus import stopwords
@@ -43,9 +36,6 @@ def load_stopwords():
 
 STOP_WORDS = load_stopwords()
 
-# =========================
-# CLEAN
-# =========================
 
 def clean_text(text):
     text = html.unescape(text)
@@ -68,9 +58,6 @@ def clean_text(text):
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-# =========================
-# PREPROCESS
-# =========================
 
 def preprocess(text):
     text = text.lower()
@@ -87,9 +74,7 @@ def merge_counters(cs):
         total.update(c)
     return total
 
-# =========================
-# АНАЛИЗ
-# =========================
+
 
 def get_top_vocab(f1, f2, top_n):
     top1 = set(w for w, _ in f1.most_common(top_n))
@@ -105,9 +90,6 @@ def cosine_similarity(v1, v2):
     n2 = np.linalg.norm(v2)
     return dot / (n1 * n2) if n1 and n2 else 0.0
 
-# =========================
-# SEQUENTIAL
-# =========================
 
 def run_sequential():
     if rank != 0:
@@ -136,14 +118,11 @@ def run_sequential():
 
     t_seq = time.perf_counter() - t0
 
-    print(f"Топ-10 слов (текст 1) : {[w for w, _ in f1.most_common(10)]}")
-    print(f"Топ-10 слов (текст 2) : {[w for w, _ in f2.most_common(10)]}")
+    print(f"Топ-10 слов (текст 1) : {[w for w, _ in f1.most_common(15)]}")
+    print(f"Топ-10 слов (текст 2) : {[w for w, _ in f2.most_common(15)]}")
 
     return t_seq, cosine
 
-# =========================
-# PARALLEL
-# =========================
 
 def run_parallel():
     comm.Barrier()
@@ -188,19 +167,17 @@ def run_parallel():
 
     return None, None
 
-# =========================
-# MAIN
-# =========================
+
 
 def main():
 
-    # SEQUENTIAL
+
     if rank == 0:
         t_seq, cos_seq = run_sequential()
 
     comm.Barrier()
 
-    # PARALLEL
+
     t_par, cos_par = run_parallel()
 
     if rank == 0:

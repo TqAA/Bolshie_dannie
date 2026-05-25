@@ -12,13 +12,10 @@ import numpy as np
 from PIL import Image
 from mpi4py import MPI
 #  mpiexec -n 6 python .\fisher_fractal\fractal.py
-# =========================
-# CONFIG
-# =========================
 
 RANGE_SIZE   = 8
 DOMAIN_SIZE  = 16
-DOMAIN_STEP  = 16  # увеличь до 16 для ускорения в ~4x при небольшой потере качества
+DOMAIN_STEP  = 16
 DECODE_ITERS = 20
 
 INPUT_PATH  = "fisher_fractal/input.png"
@@ -26,21 +23,15 @@ OUTPUT_MPI  = "output_mpi.png"
 FRACTAL_DAT = "fractal.dat"
 
 # Формат одной записи: ry, rx, dy, dx (uint16) + tid (uint8) + s, o (float32)
-# Итого: 2+2+2+2+1+4+4 = 17 байт на блок вместо ~250 байт через pickle
 RECORD_FMT  = ">HHHHBff"
 RECORD_SIZE = struct.calcsize(RECORD_FMT)
 
-# =========================
-# MPI INIT
-# =========================
+
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# =========================
-# IMAGE IO
-# =========================
 
 def load_image(path):
     return np.array(Image.open(path).convert("L"), dtype=np.float32)
@@ -48,9 +39,6 @@ def load_image(path):
 def save_image(img, path):
     Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).save(path)
 
-# =========================
-# BLOCK OPS
-# =========================
 
 def downsample(block):
     f = DOMAIN_SIZE // RANGE_SIZE
@@ -68,11 +56,12 @@ def get_transforms(block):
         np.flipud(np.rot90(block)),
     ]
 
-# =========================
-# FIT
-# =========================
+
 
 def fit(domain, rng):
+    """
+     МНК-подбор коэффициентов s и o
+    """
     d = domain.reshape(-1).astype(np.float64)
     r = rng.reshape(-1).astype(np.float64)
     n = len(d)
@@ -90,9 +79,7 @@ def fit(domain, rng):
     mse = np.mean((s * d + o - r) ** 2)
     return s, o, mse
 
-# =========================
-# PSNR
-# =========================
+
 
 def psnr(original, restored):
     mse = np.mean((original - restored) ** 2)
@@ -100,9 +87,7 @@ def psnr(original, restored):
         return float("inf")
     return 10 * np.log10((255 ** 2) / mse)
 
-# =========================
-# DOMAIN POOL
-# =========================
+
 
 def build_domain_pool(img):
     H, W = img.shape
@@ -113,9 +98,7 @@ def build_domain_pool(img):
             pool.append((y, x, downsample(block)))
     return pool
 
-# =========================
-# ENCODE
-# =========================
+
 
 def encode_chunk(img, ranges, domain_pool):
     records = []
@@ -134,14 +117,11 @@ def encode_chunk(img, ranges, domain_pool):
             print(f"[rank {rank}] {i}/{len(ranges)}", flush=True)
     return records
 
-# =========================
-# BINARY SAVE / LOAD
-# =========================
+
 
 def save_fractal(records, path):
     """
-    Сохраняет записи в бинарном формате.
-    Каждая запись = 17 байт (вместо ~250 байт через pickle).
+    Сохраняет записи в бинарнике
     Формат: ry(u16) rx(u16) dy(u16) dx(u16) tid(u8) s(f32) o(f32)
     """
     with open(path, "wb") as f:
@@ -151,7 +131,7 @@ def save_fractal(records, path):
             f.write(struct.pack(RECORD_FMT, ry, rx, dy, dx, tid, s, o))
 
 def load_fractal(path):
-    """Читает бинарный файл и возвращает список записей."""
+    """Читает бинарный файл и возвращает список записей"""
     records = []
     with open(path, "rb") as f:
         n = struct.unpack(">I", f.read(4))[0]
@@ -160,9 +140,7 @@ def load_fractal(path):
             records.append(rec)
     return records
 
-# =========================
-# DECODE
-# =========================
+
 
 def decode(records, shape):
     H, W = shape
@@ -177,9 +155,7 @@ def decode(records, shape):
         img = np.clip(new_img, 0, 255)
     return img
 
-# =========================
-# MPI RUN
-# =========================
+
 
 def run_mpi(img, ranges, domain_pool):
 
@@ -234,9 +210,7 @@ def run_mpi(img, ranges, domain_pool):
         print(f"Compression    : {ratio:.2f}x")
 
 
-# =========================
-# MAIN
-# =========================
+
 
 def main():
     img  = load_image(INPUT_PATH)
@@ -258,7 +232,6 @@ def main():
         print(f"Range blocks   : {len(ranges)}")
         print(f"Domain blocks  : {len(domain_pool)}")
         print(f"MPI processes  : {size}")
-        print(f"Bytes/block    : {RECORD_SIZE}  (binary) vs ~250 (pickle)")
         print()
 
     comm.Barrier()
